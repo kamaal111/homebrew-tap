@@ -15,6 +15,7 @@ TEMPLATE = (
     Path(__file__).resolve().parent.parent / "packaging/homebrew/agent-vm.rb.in"
 ).read_text()
 DIGEST = "a" * 64
+BOTTLE = {"tag": "arm64_sequoia", "sha256": "b" * 64}
 
 
 def release(tag="v0.1.0", **changes):
@@ -188,6 +189,7 @@ class ValidationRecorder:
 
     def __call__(self, formula, work):
         self.calls += 1
+        return BOTTLE
 
 
 class TestUpdateIntegration:
@@ -231,6 +233,7 @@ class TestUpdateIntegration:
         monkeypatch.setattr(updater.shutil, "which", lambda tool: "/fixture/tool")
         monkeypatch.setenv("GITHUB_ACTIONS", "true")
         monkeypatch.setattr(updater, "validate_formula", self.validation)
+        monkeypatch.setattr(updater, "publish_bottle", lambda *args: None)
 
     def external_boundary(self, *args, cwd=None, env=None):
         if args[0] != "gh":
@@ -380,3 +383,123 @@ class TestUpdateIntegration:
             == manual_sha
         )
         assert self.edited == 0
+
+
+class TestBottle:
+    def test_checked_in_formula_matches_its_template_and_bottle(self):
+        formula = (updater.SCRIPT_ROOT / "Formula/agent-vm.rb").read_text()
+        digest = updater.re.search(r'^  sha256 "([0-9a-f]{64})"$', formula, updater.re.MULTILINE)[1]
+        assert updater.render_formula(
+            TEMPLATE, updater.formula_version(formula), digest, updater.formula_bottle(formula),
+        ) == formula
+
+    def test_renders_bottle_without_changing_application_version(self):
+        formula = updater.render_formula(TEMPLATE, "v0.1.0", DIGEST, BOTTLE)
+        assert updater.formula_version(formula) == "v0.1.0"
+        assert updater.formula_bottle(formula) == BOTTLE
+        assert f'sha256 "{DIGEST}"' in formula
+        assert updater.bottle_root("v0.1.0", BOTTLE["sha256"]) in formula
+        assert "@BOTTLE@" not in formula
+
+    def test_source_formula_can_be_used_to_build_bottle(self):
+        formula = updater.render_formula(TEMPLATE, "v0.1.0", DIGEST)
+        assert updater.formula_bottle(formula) is None
+        assert "@BOTTLE@" not in formula
+
+    def test_rejects_wrong_architecture(self):
+        with pytest.raises(ValueError, match="macOS bottle tag"):
+            updater.render_formula(TEMPLATE, "v0.1.0", DIGEST, {**BOTTLE, "tag": "x86_64_linux"})
+
+    def test_rejects_invalid_bottle_checksum(self):
+        with pytest.raises(ValueError, match="bottle SHA256"):
+            updater.render_formula(TEMPLATE, "v0.1.0", DIGEST, {**BOTTLE, "sha256": "bad"})
+
+    def test_accepts_owned_bottle_update(self):
+        assert updater.validate_owned_change(
+            updater.MARKER, {"Formula/agent-vm.rb"}, 1,
+            updater.render_formula(TEMPLATE, "v0.1.0", DIGEST, BOTTLE),
+            TEMPLATE, "# Tap\n", updater.readme_with_install("# Tap\n"),
+        ) is None
+
+    def test_rejects_manually_changed_bottle_url(self):
+        formula = updater.render_formula(TEMPLATE, "v0.1.0", DIGEST, BOTTLE)
+        with pytest.raises(ValueError, match="unexpected manual edits"):
+            updater.validate_owned_change(
+                updater.MARKER, {"Formula/agent-vm.rb"}, 1,
+                formula.replace("/releases/download/agent-vm-", "/releases/download/manual-"),
+                TEMPLATE, "# Tap\n", updater.readme_with_install("# Tap\n"),
+            )
+
+    def test_checksum_mismatch_prevents_publication(self, tmp_path, monkeypatch):
+        archive = tmp_path / "agent-vm.bottle.tar.gz"
+        archive.write_bytes(b"corrupt")
+        monkeypatch.setattr(updater, "run", lambda *args, **kwargs: pytest.fail("Unexpected publication"))
+        with pytest.raises(ValueError, match="mismatched checksum"):
+            updater.publish_bottle({**BOTTLE, "archive": archive}, "v0.1.0", "base-sha")
+
+
+class TestValidationOnly:
+    def test_validates_without_github_or_publication(self, monkeypatch):
+        calls = []
+        monkeypatch.setattr(updater.platform, "system", lambda: "Darwin")
+        monkeypatch.setattr(updater.platform, "machine", lambda: "arm64")
+        monkeypatch.setattr(updater.shutil, "which", lambda tool: None if tool == "gh" else "/fixture/tool")
+        monkeypatch.setattr(updater, "validate_formula", lambda formula, work: calls.append(formula))
+        monkeypatch.setattr(updater, "run", lambda *args, **kwargs: pytest.fail("Unexpected publication"))
+        monkeypatch.setattr("sys.argv", ["update-agent-vm.py", "--validate-only"])
+        assert updater.main() == 0
+        assert calls == [updater.SCRIPT_ROOT / "Formula/agent-vm.rb"]
+
+    def test_rejects_version_with_validation_only(self, monkeypatch):
+        monkeypatch.setattr("sys.argv", ["update-agent-vm.py", "--validate-only", "--version", "v0.1.0"])
+        with pytest.raises(SystemExit) as error:
+            updater.main()
+        assert error.value.code == 2
+
+
+class TestBottlePublication:
+    @pytest.fixture(autouse=True)
+    def setup(self, tmp_path, monkeypatch):
+        self.archive = tmp_path / "agent-vm--0.1.0.arm64_sequoia.bottle.tar.gz"
+        self.archive.write_bytes(b"verified bottle")
+        self.digest = hashlib.sha256(self.archive.read_bytes()).hexdigest()
+        self.bottle = {"tag": "arm64_sequoia", "sha256": self.digest,
+                       "filename": "agent-vm-0.1.0.arm64_sequoia.bottle.tar.gz",
+                       "archive": self.archive}
+        self.releases = []
+        self.created = []
+        self.existing_bytes = self.archive.read_bytes()
+        monkeypatch.setattr(updater, "run", self.external_boundary)
+
+    def external_boundary(self, *args, **kwargs):
+        if args[1:3] == ("release", "list"):
+            return json.dumps(self.releases)
+        if args[1:3] == ("release", "create"):
+            self.created.append((args, Path(args[4]).read_bytes()))
+            return "https://example.com/release"
+        if args[1:3] == ("release", "download"):
+            (Path(args[args.index("--dir") + 1]) / self.bottle["filename"]).write_bytes(self.existing_bytes)
+            return ""
+        raise AssertionError(f"Unexpected external operation: {args}")
+
+    def test_publishes_verified_asset_to_checksum_named_tap_release(self):
+        updater.publish_bottle(self.bottle, "v0.1.0", "base-sha")
+        args, contents = self.created[0]
+        assert contents == b"verified bottle"
+        assert args[3] == updater.bottle_release("v0.1.0", self.digest)
+        assert args[args.index("--repo") + 1] == updater.TAP
+        assert args[args.index("--target") + 1] == "base-sha"
+        assert "--latest=false" in args
+        assert Path(args[4]).name == self.bottle["filename"]
+
+    def test_reuses_existing_asset_after_verifying_checksum(self):
+        self.releases = [{"tagName": updater.bottle_release("v0.1.0", self.digest)}]
+        updater.publish_bottle(self.bottle, "v0.1.0", "base-sha")
+        assert self.created == []
+
+    def test_does_not_overwrite_mismatched_existing_asset(self):
+        self.releases = [{"tagName": updater.bottle_release("v0.1.0", self.digest)}]
+        self.existing_bytes = b"different content"
+        with pytest.raises(ValueError, match="different checksum"):
+            updater.publish_bottle(self.bottle, "v0.1.0", "base-sha")
+        assert self.created == []

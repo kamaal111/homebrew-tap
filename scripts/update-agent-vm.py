@@ -68,11 +68,39 @@ def verify_checksum(checksums: str, archive: Path) -> str:
     return digest
 
 
-def render_formula(template: str, tag: str, digest: str) -> str:
+def render_formula(template: str, tag: str, digest: str, bottle: dict | None = None) -> str:
     version_tuple(tag)
     if not re.fullmatch(r"[0-9a-f]{64}", digest):
         raise ValueError("Expected SHA256 digest")
-    return template.replace("@VERSION@", tag[1:]).replace("@SHA256@", digest)
+    block = ""
+    if bottle:
+        if not re.fullmatch(r"arm64_[a-z_]+", bottle["tag"]):
+            raise ValueError("Expected Apple Silicon macOS bottle tag")
+        if not re.fullmatch(r"[0-9a-f]{64}", bottle["sha256"]):
+            raise ValueError("Expected bottle SHA256 digest")
+        block = ("  bottle do\n"
+                 f'    root_url "{bottle_root(tag, bottle["sha256"])}"\n'
+                 f'    sha256 cellar: :any_skip_relocation, {bottle["tag"]}: "{bottle["sha256"]}"\n'
+                 "  end\n\n")
+    return template.replace("@VERSION@", tag[1:]).replace("@SHA256@", digest).replace("@BOTTLE@", block)
+
+
+def bottle_release(tag: str, digest: str) -> str:
+    return f"agent-vm-{tag}-bottle-{digest}"
+
+
+def bottle_root(tag: str, digest: str) -> str:
+    return f"https://github.com/{TAP}/releases/download/{bottle_release(tag, digest)}"
+
+
+def formula_bottle(formula: str) -> dict | None:
+    match = re.search(
+        r'^    sha256 cellar: :any_skip_relocation, (arm64_[a-z_]+): "([0-9a-f]{64})"$',
+        formula, re.MULTILINE,
+    )
+    if not match:
+        return None
+    return {"tag": match[1], "sha256": match[2]}
 
 
 def formula_version(formula: str) -> str:
@@ -93,6 +121,10 @@ Install on Apple Silicon macOS:
 ```sh
 brew install kamaal111/tap/agent-vm
 ```
+
+Homebrew selects a prebuilt bottle matching the host macOS, or an older
+compatible bottle. When no compatible bottle is available, installation uses
+the release archive and requires compatible Command Line Tools.
 
 Run `agent-vm config init` and `agent-vm doctor` after installation.
 Tart, guest images and credentials are configured separately.
@@ -120,52 +152,121 @@ def validate_owned_change(message: str, paths: set[str], count: int,
     if not paths or not paths <= {"Formula/agent-vm.rb", "README.md"}:
         raise ValueError("Unexpected changed files on update-agent-vm")
     checksum = re.search(r'^  sha256 "([0-9a-f]{64})"$', formula, re.MULTILINE)
-    if not checksum or formula != render_formula(template, formula_version(formula), checksum[1]):
+    if not checksum or formula != render_formula(template, formula_version(formula), checksum[1], formula_bottle(formula)):
         raise ValueError("Formula has unexpected manual edits")
     if readme != readme_with_install(parent_readme):
         raise ValueError("README has unexpected manual edits")
 
 
-def validate_formula(formula: Path, work: Path) -> None:
+def validate_formula(formula: Path, work: Path) -> dict:
     # Homebrew permits build writes throughout system temp, so its executable
     # must live outside that tree for its own sandbox inheritance checks.
     cache = Path.home() / "Library/Caches"
     cache.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix="agent-vm-homebrew-", dir=cache) as directory:
-        validate_formula_in_prefix(formula, work, Path(directory))
+        return validate_formula_in_prefix(formula, work, Path(directory))
 
 
-def validate_formula_in_prefix(formula: Path, work: Path, prefix: Path) -> None:
+def validate_formula_in_prefix(formula: Path, work: Path, prefix: Path) -> dict:
     run("git", "clone", "--quiet", "--depth=1", "https://github.com/Homebrew/brew.git", str(prefix))
     brew = str(prefix / "bin/brew")
     env = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1",
-           "HOMEBREW_NO_INSTALL_FROM_API": "1", "HOMEBREW_NO_ENV_HINTS": "1",
+           "HOMEBREW_NO_ENV_HINTS": "1",
            "HOMEBREW_TEMP": str(work / "brew-tmp"),
-           "HOMEBREW_CACHE": str(work / "brew-cache")}
+           "HOMEBREW_CACHE": str(work / "brew-cache"),
+           "XDG_CONFIG_HOME": str(work / "config")}
     (work / "brew-tmp").mkdir()
     tap_dir = prefix / "Library/Taps/agent-vm/homebrew-validation"
     (tap_dir / "Formula").mkdir(parents=True)
     shutil.copyfile(formula, tap_dir / "Formula/agent-vm.rb")
     run("git", "init", "--quiet", str(tap_dir))
+    run("git", "-C", str(tap_dir), "add", ".")
+    run("git", "-C", str(tap_dir), "-c", "user.name=Validation",
+        "-c", "user.email=validation@example.com", "commit", "--quiet", "-m", "Validate packaging")
     run("ruby", "-c", str(formula))
     run(brew, "style", "--formula", str(tap_dir / "Formula/agent-vm.rb"), env=env)
-    run(brew, "install", "agent-vm/validation/agent-vm", env=env)
+    run(brew, "trust", "--formula", "agent-vm/validation/agent-vm", env=env)
+    published = formula_bottle(formula.read_text())
+    if published:
+        run(brew, "fetch", "--bottle-tag=" + published["tag"],
+            "agent-vm/validation/agent-vm", env=env)
+    run(brew, "install", "--build-bottle", "agent-vm/validation/agent-vm", env=env)
+    run(brew, "bottle", "--json", "--no-rebuild", "agent-vm/validation/agent-vm", cwd=work, env=env)
+    metadata_files = list(work.glob("agent-vm--*.bottle.json"))
+    if len(metadata_files) != 1:
+        raise ValueError("Expected exactly one generated bottle metadata file")
+    metadata = json.loads(metadata_files[0].read_text())["agent-vm/validation/agent-vm"]["bottle"]
+    if metadata["cellar"] != "any_skip_relocation" or len(metadata["tags"]) != 1:
+        raise ValueError("Expected one relocatable bottle without prefix references")
+    bottle_tag, artifact = next(iter(metadata["tags"].items()))
+    archive = work / artifact["local_filename"]
+    if hashlib.sha256(archive.read_bytes()).hexdigest() != artifact["sha256"]:
+        raise ValueError("Generated bottle checksum mismatch")
+    run(brew, "uninstall", "agent-vm/validation/agent-vm", env=env)
+    local_template = re.sub(r"  bottle do\n.*?  end\n\n", "", formula.read_text(), flags=re.DOTALL)
+    local_template = local_template.replace("  depends_on arch:", "@BOTTLE@  depends_on arch:")
+    source_digest = re.search(r'^  sha256 "([0-9a-f]{64})"$', formula.read_text(), re.MULTILINE)[1]
+    bottle = {"tag": bottle_tag, "sha256": artifact["sha256"]}
+    local_formula = render_formula(local_template, formula_version(formula.read_text()), source_digest, bottle)
+    local_formula = local_formula.replace(
+        bottle_root(formula_version(formula.read_text()), artifact["sha256"]), work.as_uri(),
+    )
+    shutil.copyfile(archive, work / artifact["filename"])
+    (tap_dir / "Formula/agent-vm.rb").write_text(local_formula)
+    run(brew, "install", "--force-bottle", "agent-vm/validation/agent-vm", env=env)
+    receipt = json.loads((prefix / "Cellar/agent-vm" / formula_version(formula.read_text())[1:]
+                          / "INSTALL_RECEIPT.json").read_text())
+    if not receipt["poured_from_bottle"]:
+        raise ValueError("Validation did not install from a bottle")
     run(brew, "test", "agent-vm/validation/agent-vm", env=env)
     binary = prefix / "bin/agent-vm"
     expected = "agent-vm version " + formula_version(formula.read_text())[1:]
     if run(str(binary), "--version", env=env) != expected:
         raise ValueError("Installed binary version differs from formula")
-    run(str(binary), "--help", env=env)
+    if "Persistent development VMs" not in run(str(binary), "--help", env=env):
+        raise ValueError("Installed binary help differs from agent-vm")
+    run(brew, "uninstall", "agent-vm/validation/agent-vm", env=env)
+    if binary.exists() or binary.is_symlink():
+        raise ValueError("Installed binary was not removed")
+    return {"tag": bottle_tag, "sha256": artifact["sha256"],
+            "filename": artifact["filename"], "archive": archive}
+
+
+def publish_bottle(bottle: dict, tag: str, base_sha: str) -> None:
+    archive = bottle["archive"]
+    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
+    if digest != bottle["sha256"]:
+        raise ValueError("Refusing to publish a bottle with a mismatched checksum")
+    release_tag = bottle_release(tag, digest)
+    releases = gh_json("release", "list", "--repo", TAP, "--limit", "1000", "--json", "tagName")
+    with tempfile.TemporaryDirectory(prefix="agent-vm-bottle-publish-") as directory:
+        asset = Path(directory) / bottle["filename"]
+        if any(release["tagName"] == release_tag for release in releases):
+            run("gh", "release", "download", release_tag, "--repo", TAP,
+                "--dir", directory, "--pattern", asset.name)
+            if hashlib.sha256(asset.read_bytes()).hexdigest() != digest:
+                raise ValueError("Existing bottle release asset has a different checksum")
+            return
+        shutil.copyfile(archive, asset)
+        run("gh", "release", "create", release_tag, str(asset), "--repo", TAP,
+            "--target", base_sha, "--latest=false", "--title", f"agent-vm {tag} Homebrew bottle",
+            "--notes", "Homebrew bottle of the existing agent-vm release; no application version change.")
+
+
+def require_validation_host() -> None:
+    if (platform.system(), platform.machine()) != ("Darwin", "arm64"):
+        raise ValueError("Formula validation requires Apple Silicon macOS")
+    for tool in ("git", "brew", "ruby"):
+        if not shutil.which(tool):
+            raise ValueError(f"Missing prerequisite: {tool}")
 
 
 def update(requested: str | None) -> None:
     if requested:
         version_tuple(requested)
-    if (platform.system(), platform.machine()) != ("Darwin", "arm64"):
-        raise ValueError("Formula validation requires Apple Silicon macOS")
-    for tool in ("gh", "git", "brew", "ruby"):
-        if not shutil.which(tool):
-            raise ValueError(f"Missing prerequisite: {tool}")
+    require_validation_host()
+    if not shutil.which("gh"):
+        raise ValueError("Missing prerequisite: gh")
     run("gh", "auth", "status")
     identity = {"name": "github-actions[bot]", "email": "41898282+github-actions[bot]@users.noreply.github.com"}
     if os.environ.get("GITHUB_ACTIONS") != "true":
@@ -201,7 +302,8 @@ def update(requested: str | None) -> None:
         previous_sha = remote_branch.split()[0] if remote_branch else ""
         if prs and (prs[0]["headRefOid"] != previous_sha or prs[0]["baseRefName"] != base):
             raise ValueError("Update PR branch/base changed unexpectedly")
-        if current == formula and not prs:
+        if (formula_bottle(current or "") and
+                current == render_formula(template, tag, digest, formula_bottle(current)) and not prs):
             print(f"{tag} is already installed in the tap; no changes needed.")
             return
         if previous_sha:
@@ -223,7 +325,10 @@ def update(requested: str | None) -> None:
         readme_path = repo / "README.md"
         readme_path.write_text(readme_with_install(readme_path.read_text()))
         print(f"Validating {tag} in an isolated Homebrew prefix…", flush=True)
-        validate_formula(formula_path, work)
+        bottle = validate_formula(formula_path, work)
+        formula = render_formula(template, tag, digest, bottle)
+        formula_path.write_text(formula)
+        publish_bottle(bottle, tag, base_sha)
         if not run("git", "diff", "--name-only", cwd=repo) and current == formula:
             print("No changes needed.")
             return
@@ -232,7 +337,8 @@ def update(requested: str | None) -> None:
                 f"**Changes**\nUse the {tag} macOS ARM64 archive and its verified SHA256.\n"
                 "Restrict installation to Apple Silicon macOS; keep Tart setup separate.\n\n"
                 f"Release: https://github.com/{SOURCE}/releases/tag/{tag}\n\n"
-                "Validation: SHA256, formula style, isolated install, brew test,\n"
+                "Publish a relocatable Homebrew bottle to avoid client build checks.\n\n"
+                "Validation: SHA256, formula style, isolated bottle install, brew test,\n"
                 "help and version.")
         run("git", "checkout", "--quiet", "-b", BRANCH, cwd=repo)
         for key, value in identity.items():
@@ -260,10 +366,18 @@ def update(requested: str | None) -> None:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--version", help="Stable tag such as v0.1.0; default: latest stable release")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--version", help="Stable tag such as v0.1.0; default: latest stable release")
+    mode.add_argument("--validate-only", action="store_true",
+                      help="Validate the checked-in formula and bottle without publishing")
     args = parser.parse_args()
     try:
-        update(args.version)
+        if args.validate_only:
+            require_validation_host()
+            with tempfile.TemporaryDirectory(prefix="agent-vm-validation-") as directory:
+                validate_formula(SCRIPT_ROOT / "Formula/agent-vm.rb", Path(directory))
+        else:
+            update(args.version)
     except (ValueError, OSError, KeyError, subprocess.CalledProcessError) as error:
         print(f"agent-vm tap update failed: {error}", file=sys.stderr)
         return 1

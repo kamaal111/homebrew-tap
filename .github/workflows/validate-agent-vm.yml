@@ -1,0 +1,25 @@
+name: Validate agent-vm
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          version: '0.13.5'
+      - name: Test updater
+        run: uv run --locked pytest
+      - name: Validate bottle installation and removal
+        run: uv run --locked python scripts/update-agent-vm.py --validate-only

@@ -5,6 +5,11 @@ class AgentVm < Formula
   version "0.1.0"
   sha256 "40d545fbe63a663f017ca54de89af47e6fd287d6b645d1e2dd53afb4b6288a6e"
 
+  bottle do
+    root_url "https://github.com/kamaal111/homebrew-tap/releases/download/agent-vm-v0.1.0-bottle-75dcb46787d14bcb7b8ecc06c3bcf3f8169f2e50d6ef58064275803faa1d5c33"
+    sha256 cellar: :any_skip_relocation, arm64_golden_gate: "75dcb46787d14bcb7b8ecc06c3bcf3f8169f2e50d6ef58064275803faa1d5c33"
+  end
+
   depends_on arch: :arm64
   depends_on :macos
 
