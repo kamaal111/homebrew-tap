@@ -1,13 +1,13 @@
 class AgentVm < Formula
   desc "Persistent development VMs and native coding-agent sessions"
   homepage "https://github.com/kamaal111/agent-vm"
-  url "https://github.com/kamaal111/agent-vm/releases/download/v0.1.0/agent-vm_0.1.0_darwin_arm64.tar.gz"
-  version "0.1.0"
-  sha256 "40d545fbe63a663f017ca54de89af47e6fd287d6b645d1e2dd53afb4b6288a6e"
+  url "https://github.com/kamaal111/agent-vm/releases/download/v0.2.0/agent-vm_0.2.0_darwin_arm64.tar.gz"
+  version "0.2.0"
+  sha256 "e447dc1a0c51de61e8609272a526053eceab7ac87a24b868ebae8c14d4159629"
 
   bottle do
-    root_url "https://github.com/kamaal111/homebrew-tap/releases/download/agent-vm-v0.1.0-bottle-75dcb46787d14bcb7b8ecc06c3bcf3f8169f2e50d6ef58064275803faa1d5c33"
-    sha256 cellar: :any_skip_relocation, arm64_golden_gate: "75dcb46787d14bcb7b8ecc06c3bcf3f8169f2e50d6ef58064275803faa1d5c33"
+    root_url "https://github.com/kamaal111/homebrew-tap/releases/download/agent-vm-v0.2.0-bottle-d7908f280417d56fe2a4ea9bfec2bc0ed8fbffd9d5fd33bc8d568c722943f363"
+    sha256 cellar: :any_skip_relocation, arm64_sequoia: "d7908f280417d56fe2a4ea9bfec2bc0ed8fbffd9d5fd33bc8d568c722943f363"
   end
 
   depends_on arch: :arm64
