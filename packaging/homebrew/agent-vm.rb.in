@@ -1,0 +1,27 @@
+class AgentVm < Formula
+  desc "Persistent development VMs and native coding-agent sessions"
+  homepage "https://github.com/kamaal111/agent-vm"
+  url "https://github.com/kamaal111/agent-vm/releases/download/v@VERSION@/agent-vm_@VERSION@_darwin_arm64.tar.gz"
+  version "@VERSION@"
+  sha256 "@SHA256@"
+
+  depends_on arch: :arm64
+  depends_on :macos
+
+  def install
+    bin.install "agent-vm"
+  end
+
+  def caveats
+    <<~EOS
+      Run agent-vm config init, then agent-vm doctor.
+      Install Tart and prepare guest images and credentials separately.
+      See https://github.com/kamaal111/agent-vm#first-setup
+    EOS
+  end
+
+  test do
+    assert_equal "agent-vm version #{version}", shell_output("#{bin}/agent-vm --version").strip
+    assert_match "Persistent development VMs", shell_output("#{bin}/agent-vm --help")
+  end
+end
