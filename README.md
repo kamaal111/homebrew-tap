@@ -83,3 +83,16 @@ Run updater tests with:
 ```sh
 uv run --locked pytest
 ```
+
+<!-- agent-vm:start -->
+## agent-vm
+
+Install on Apple Silicon macOS:
+
+```sh
+brew install kamaal111/tap/agent-vm
+```
+
+Run `agent-vm config init` and `agent-vm doctor` after installation.
+Tart, guest images and credentials are configured separately.
+<!-- agent-vm:end -->
