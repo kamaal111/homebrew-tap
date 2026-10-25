@@ -1,0 +1,42 @@
+name: Update agent-vm
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Stable release tag, e.g. v0.1.0 (empty: latest stable)'
+        required: false
+        type: string
+
+permissions:
+  contents: write
+  pull-requests: write
+
+concurrency:
+  group: update-agent-vm
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          version: '0.13.5'
+      - name: Test updater
+        run: uv run --locked pytest
+      - name: Validate release and propose formula PR
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_VERSION: ${{ inputs.version }}
+        run: |
+          gh auth setup-git
+          if [ -n "$RELEASE_VERSION" ]; then
+            uv run --locked python scripts/update-agent-vm.py --version "$RELEASE_VERSION"
+          else
+            uv run --locked python scripts/update-agent-vm.py
+          fi

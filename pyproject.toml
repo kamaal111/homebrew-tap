@@ -6,6 +6,7 @@ requires-python = ">=3.15,<3.16"
 
 [dependency-groups]
 dev = [
+    "pytest==9.1.1",
     "homebrew-pypi-poet==0.10.0",
     "open-api-maker-kamaalio==0.0.2",
     # poet 0.10.0 imports pkg_resources, removed in setuptools 81.
@@ -14,3 +15,6 @@ dev = [
 
 [tool.uv]
 package = false
+
+[tool.pytest.ini_options]
+testpaths = ["scripts"]
