@@ -171,3 +171,38 @@ and [command reference](https://docs.brew.sh/Manpage) for packaging guidance.
 - Review the manifest, generated lockfile, and any generated formula changes.
 - Report checks run and any unresolved compatibility, audit, or testing issues.
 - Keep local environments and temporary generated files out of the commit.
+
+## agent-vm bottles
+
+agent-vm ships a prebuilt Apple Silicon macOS executable and a relocatable
+Homebrew bottle for macOS 27. Homebrew selects a compatible bottle when available;
+otherwise it installs from the release archive with compatible Command Line Tools.
+
+The formula is generated from `packaging/homebrew/agent-vm.rb.in`. Keep template
+changes synchronized with `Formula/agent-vm.rb`. The updater verifies the upstream
+release archive and checksum, builds a native macOS bottle in an isolated
+Homebrew prefix, and tests installation from that bottle before publishing it.
+It writes the native bottle tag and verified checksum into the formula.
+Bottles are hosted in immutable, checksum-named releases in this tap repository.
+Published assets are verified and reused rather than overwritten. Release updates
+require permission to create releases and PRs in this tap. The updater rejects
+downgrades and protects manual branch changes.
+
+Run on Apple Silicon macOS:
+
+```sh
+uv run --locked pytest
+uv run --locked python scripts/update-agent-vm.py --validate-only
+```
+
+Validation clones Homebrew into a disposable prefix under `~/Library/Caches`,
+checks Ruby syntax and formula style, and fetches the published bottle with
+checksum verification. It then builds a native bottle from the source archive,
+installs it through a temporary validation tap, checks `poured_from_bottle` in
+the installation receipt, runs `brew test`, checks version/help, and uninstalls.
+Downloads, installation files, and executable links stay inside the disposable
+environment. Validation requires Git, Homebrew, Ruby, compatible developer tools
+for bottle preparation, and network access. It does not need GitHub credentials
+or publish commits, releases, branches, or PRs. The PR workflow runs these checks.
+
+Keep Tart and guest setup separate from package validation.
