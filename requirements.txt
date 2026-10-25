@@ -1,2 +1,0 @@
-homebrew-pypi-poet==0.10.0
-open-api-maker-kamaalio==0.0.2

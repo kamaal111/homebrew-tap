@@ -7,13 +7,16 @@ default:
 
 formulate:
     #!/bin/zsh
+    set -eu
 
-    . .venv/bin/activate
-    poet -f open-api-maker-kamaalio > $OPEN_API_MAKER_FORMULA
-    open_api_maker_formula=$(sed 's/OpenApiMakerKamaalio/OpenApiMaker/g' $OPEN_API_MAKER_FORMULA)
-    rm $OPEN_API_MAKER_FORMULA
-    touch $OPEN_API_MAKER_FORMULA
-    echo $open_api_maker_formula >> $OPEN_API_MAKER_FORMULA
+    generated=$(mktemp "${OPEN_API_MAKER_FORMULA}.generated.XXXXXX")
+    transformed=""
+    trap 'rm -f "$generated" "$transformed"' EXIT
+    transformed=$(mktemp "${OPEN_API_MAKER_FORMULA}.transformed.XXXXXX")
+    uv run --locked poet -f open-api-maker-kamaalio > "$generated"
+    sed 's/OpenApiMakerKamaalio/OpenApiMaker/g' "$generated" > "$transformed"
+    chmod 644 "$transformed"
+    mv "$transformed" "$OPEN_API_MAKER_FORMULA"
 
 test-install:
     #!/bin/zsh
@@ -23,6 +26,4 @@ test-install:
     brew install --build-from-source --verbose --debug $OPEN_API_MAKER_FORMULA
 
 init-venv:
-    python3 -m venv .venv
-    . .venv/bin/activate
-    pip install -r requirements.txt
+    uv sync --locked

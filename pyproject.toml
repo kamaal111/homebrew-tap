@@ -1,0 +1,16 @@
+[project]
+name = "homebrew-tap"
+version = "0.0.0"
+description = "Maintainer tooling for the kamaal111 Homebrew tap"
+requires-python = ">=3.15,<3.16"
+
+[dependency-groups]
+dev = [
+    "homebrew-pypi-poet==0.10.0",
+    "open-api-maker-kamaalio==0.0.2",
+    # poet 0.10.0 imports pkg_resources, removed in setuptools 81.
+    "setuptools<81",
+]
+
+[tool.uv]
+package = false
