@@ -100,3 +100,37 @@ the release archive and requires compatible Command Line Tools.
 Run `agent-vm config init` and `agent-vm doctor` after installation.
 Tart, guest images and credentials are configured separately.
 <!-- agent-vm:end -->
+
+## Namu
+
+Install on macOS or Linux, on ARM64 or AMD64:
+
+```sh
+brew install kamaal111/tap/namu
+```
+
+Namu manages Git worktrees across your projects. Try `namu create feature/cards`,
+`namu open`, and `namu list`. See [Namu's documentation](https://github.com/kamaal111/namu)
+for setup hooks, ignored-file copying, and safe deletion.
+
+The formula selects a prebuilt executable for your OS and architecture; Go is
+not required to install or run it. It uses macOS's system Git; on Linux, Homebrew
+installs Git as a dependency.
+
+### Update Namu
+
+Generate a formula using Namu's upstream release tooling rather than maintaining
+another copy of its checksum and platform-selection logic in this tap. From the
+root of a Namu checkout, run:
+
+```sh
+python3 scripts/update_homebrew.py --version v0.1.0 --output /tmp/namu.rb
+```
+
+Use the desired stable release tag, review the generated URLs and checksums,
+and copy its version, URL, and checksum changes into `Formula/namu.rb` while
+preserving the tap's platform dependencies and functional test. The generator verifies all four published
+archives against the release checksum manifest before writing the formula.
+Open a worktree branch and PR for each update; do not commit updates on `main`.
+The Namu validation workflow checks formula style, installation, the worktree
+lifecycle test, and uninstallation on macOS and Linux.

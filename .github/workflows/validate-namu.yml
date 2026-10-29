@@ -1,0 +1,50 @@
+name: Validate Namu
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    env:
+      HOMEBREW_NO_AUTO_UPDATE: '1'
+      HOMEBREW_NO_ANALYTICS: '1'
+      HOMEBREW_NO_ENV_HINTS: '1'
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+      - name: Configure Homebrew
+        shell: bash
+        run: |
+          if [[ "$RUNNER_OS" == Linux ]]; then
+            echo /home/linuxbrew/.linuxbrew/bin >> "$GITHUB_PATH"
+          fi
+      - name: Register validation tap
+        run: |
+          brew tap --custom-remote namu/validation "$GITHUB_WORKSPACE"
+          brew trust --formula namu/validation/namu
+      - name: Validate formula style
+        run: |
+          ruby -c Formula/namu.rb
+          brew style --formula namu/validation/namu
+      - name: Install and test Namu
+        run: |
+          brew install namu/validation/namu
+          brew test namu/validation/namu
+          namu --version
+          namu --help
+          brew uninstall namu/validation/namu
+          test ! -e "$(brew --prefix)/bin/namu"
+          test ! -L "$(brew --prefix)/bin/namu"
+          brew untap namu/validation
