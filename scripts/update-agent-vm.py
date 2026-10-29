@@ -14,8 +14,10 @@ import subprocess
 import sys
 import tempfile
 
+import homebrew_bottle
+from homebrew_bottle import TAP, formula_version, run, version_tuple
+
 SOURCE = "kamaal111/agent-vm"
-TAP = "kamaal111/homebrew-tap"
 BRANCH = "update-agent-vm"
 MARKER = "Agent-VM-Updater: v1"
 BEGIN = "<!-- agent-vm:start -->"
@@ -23,23 +25,8 @@ END = "<!-- agent-vm:end -->"
 SCRIPT_ROOT = Path(__file__).resolve().parent.parent
 
 
-def run(*args: str, cwd: Path | None = None, env: dict | None = None) -> str:
-    result = subprocess.run(args, cwd=cwd, env=env, check=False, text=True,
-                            stdout=subprocess.PIPE)
-    if result.returncode:
-        print(result.stdout, file=sys.stderr, end="")
-        raise subprocess.CalledProcessError(result.returncode, args, output=result.stdout)
-    return result.stdout.strip()
-
-
 def gh_json(*args: str, cwd: Path | None = None):
     return json.loads(run("gh", *args, cwd=cwd))
-
-
-def version_tuple(tag: str) -> tuple[int, int, int]:
-    if not re.fullmatch(r"v(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)", tag):
-        raise ValueError(f"Expected stable vX.Y.Z version, got {tag!r}")
-    return tuple(int(part) for part in tag[1:].split("."))
 
 
 def validate_release(release: dict, requested: str | None) -> str:
@@ -86,11 +73,11 @@ def render_formula(template: str, tag: str, digest: str, bottle: dict | None = N
 
 
 def bottle_release(tag: str, digest: str) -> str:
-    return f"agent-vm-{tag}-bottle-{digest}"
+    return homebrew_bottle.release_name("agent-vm", tag, digest)
 
 
 def bottle_root(tag: str, digest: str) -> str:
-    return f"https://github.com/{TAP}/releases/download/{bottle_release(tag, digest)}"
+    return homebrew_bottle.root_url("agent-vm", tag, digest)
 
 
 def formula_bottle(formula: str) -> dict | None:
@@ -101,15 +88,6 @@ def formula_bottle(formula: str) -> dict | None:
     if not match:
         return None
     return {"tag": match[1], "sha256": match[2]}
-
-
-def formula_version(formula: str) -> str:
-    match = re.search(r'^  version "([^"]+)"$', formula, re.MULTILINE)
-    if not match:
-        raise ValueError("Cannot determine current formula version")
-    tag = "v" + match[1]
-    version_tuple(tag)
-    return tag
 
 
 def readme_with_install(readme: str) -> str:
@@ -159,98 +137,18 @@ def validate_owned_change(message: str, paths: set[str], count: int,
 
 
 def validate_formula(formula: Path, work: Path) -> dict:
-    # Homebrew permits build writes throughout system temp, so its executable
-    # must live outside that tree for its own sandbox inheritance checks.
-    cache = Path.home() / "Library/Caches"
-    cache.mkdir(parents=True, exist_ok=True)
-    with tempfile.TemporaryDirectory(prefix="agent-vm-homebrew-", dir=cache) as directory:
-        return validate_formula_in_prefix(formula, work, Path(directory))
+    return homebrew_bottle.validate_formula(formula, work, name="agent-vm",
+                                           help_text="Persistent development VMs", runner=run)
 
 
 def validate_formula_in_prefix(formula: Path, work: Path, prefix: Path) -> dict:
-    run("git", "clone", "--quiet", "--depth=1", "https://github.com/Homebrew/brew.git", str(prefix))
-    brew = str(prefix / "bin/brew")
-    env = {**os.environ, "HOMEBREW_NO_AUTO_UPDATE": "1", "HOMEBREW_NO_ANALYTICS": "1",
-           "HOMEBREW_NO_ENV_HINTS": "1",
-           "HOMEBREW_TEMP": str(work / "brew-tmp"),
-           "HOMEBREW_CACHE": str(work / "brew-cache"),
-           "XDG_CONFIG_HOME": str(work / "config")}
-    (work / "brew-tmp").mkdir()
-    tap_dir = prefix / "Library/Taps/agent-vm/homebrew-validation"
-    (tap_dir / "Formula").mkdir(parents=True)
-    shutil.copyfile(formula, tap_dir / "Formula/agent-vm.rb")
-    run("git", "init", "--quiet", str(tap_dir))
-    run("git", "-C", str(tap_dir), "add", ".")
-    run("git", "-C", str(tap_dir), "-c", "user.name=Validation",
-        "-c", "user.email=validation@example.com", "commit", "--quiet", "-m", "Validate packaging")
-    run("ruby", "-c", str(formula))
-    run(brew, "style", "--formula", str(tap_dir / "Formula/agent-vm.rb"), env=env)
-    run(brew, "trust", "--formula", "agent-vm/validation/agent-vm", env=env)
-    published = formula_bottle(formula.read_text())
-    if published:
-        run(brew, "fetch", "--bottle-tag=" + published["tag"],
-            "agent-vm/validation/agent-vm", env=env)
-    run(brew, "install", "--build-bottle", "agent-vm/validation/agent-vm", env=env)
-    run(brew, "bottle", "--json", "--no-rebuild", "agent-vm/validation/agent-vm", cwd=work, env=env)
-    metadata_files = list(work.glob("agent-vm--*.bottle.json"))
-    if len(metadata_files) != 1:
-        raise ValueError("Expected exactly one generated bottle metadata file")
-    metadata = json.loads(metadata_files[0].read_text())["agent-vm/validation/agent-vm"]["bottle"]
-    if metadata["cellar"] != "any_skip_relocation" or len(metadata["tags"]) != 1:
-        raise ValueError("Expected one relocatable bottle without prefix references")
-    bottle_tag, artifact = next(iter(metadata["tags"].items()))
-    archive = work / artifact["local_filename"]
-    if hashlib.sha256(archive.read_bytes()).hexdigest() != artifact["sha256"]:
-        raise ValueError("Generated bottle checksum mismatch")
-    run(brew, "uninstall", "agent-vm/validation/agent-vm", env=env)
-    local_template = re.sub(r"  bottle do\n.*?  end\n\n", "", formula.read_text(), flags=re.DOTALL)
-    local_template = local_template.replace("  depends_on arch:", "@BOTTLE@  depends_on arch:")
-    source_digest = re.search(r'^  sha256 "([0-9a-f]{64})"$', formula.read_text(), re.MULTILINE)[1]
-    bottle = {"tag": bottle_tag, "sha256": artifact["sha256"]}
-    local_formula = render_formula(local_template, formula_version(formula.read_text()), source_digest, bottle)
-    local_formula = local_formula.replace(
-        bottle_root(formula_version(formula.read_text()), artifact["sha256"]), work.as_uri(),
+    return homebrew_bottle.validate_formula_in_prefix(
+        formula, work, prefix, name="agent-vm", help_text="Persistent development VMs", runner=run,
     )
-    shutil.copyfile(archive, work / artifact["filename"])
-    (tap_dir / "Formula/agent-vm.rb").write_text(local_formula)
-    run(brew, "install", "--force-bottle", "agent-vm/validation/agent-vm", env=env)
-    receipt = json.loads((prefix / "Cellar/agent-vm" / formula_version(formula.read_text())[1:]
-                          / "INSTALL_RECEIPT.json").read_text())
-    if not receipt["poured_from_bottle"]:
-        raise ValueError("Validation did not install from a bottle")
-    run(brew, "test", "agent-vm/validation/agent-vm", env=env)
-    binary = prefix / "bin/agent-vm"
-    expected = "agent-vm version " + formula_version(formula.read_text())[1:]
-    if run(str(binary), "--version", env=env) != expected:
-        raise ValueError("Installed binary version differs from formula")
-    if "Persistent development VMs" not in run(str(binary), "--help", env=env):
-        raise ValueError("Installed binary help differs from agent-vm")
-    run(brew, "uninstall", "agent-vm/validation/agent-vm", env=env)
-    if binary.exists() or binary.is_symlink():
-        raise ValueError("Installed binary was not removed")
-    return {"tag": bottle_tag, "sha256": artifact["sha256"],
-            "filename": artifact["filename"], "archive": archive}
 
 
 def publish_bottle(bottle: dict, tag: str, base_sha: str) -> None:
-    archive = bottle["archive"]
-    digest = hashlib.sha256(archive.read_bytes()).hexdigest()
-    if digest != bottle["sha256"]:
-        raise ValueError("Refusing to publish a bottle with a mismatched checksum")
-    release_tag = bottle_release(tag, digest)
-    releases = gh_json("release", "list", "--repo", TAP, "--limit", "1000", "--json", "tagName")
-    with tempfile.TemporaryDirectory(prefix="agent-vm-bottle-publish-") as directory:
-        asset = Path(directory) / bottle["filename"]
-        if any(release["tagName"] == release_tag for release in releases):
-            run("gh", "release", "download", release_tag, "--repo", TAP,
-                "--dir", directory, "--pattern", asset.name)
-            if hashlib.sha256(asset.read_bytes()).hexdigest() != digest:
-                raise ValueError("Existing bottle release asset has a different checksum")
-            return
-        shutil.copyfile(archive, asset)
-        run("gh", "release", "create", release_tag, str(asset), "--repo", TAP,
-            "--target", base_sha, "--latest=false", "--title", f"agent-vm {tag} Homebrew bottle",
-            "--notes", "Homebrew bottle of the existing agent-vm release; no application version change.")
+    return homebrew_bottle.publish_bottle("agent-vm", bottle, tag, base_sha, runner=run)
 
 
 def require_validation_host() -> None:

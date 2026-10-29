@@ -3,6 +3,11 @@ class Namu < Formula
   homepage "https://github.com/kamaal111/namu"
   version "0.1.0"
 
+  bottle do
+    root_url "https://github.com/kamaal111/homebrew-tap/releases/download/namu-v0.1.0-bottle-4fb40d8a6f55fb6342d6db45fa820200514f97d29fc4fdf002a3efa8866f833e"
+    sha256 cellar: :any_skip_relocation, arm64_golden_gate: "4fb40d8a6f55fb6342d6db45fa820200514f97d29fc4fdf002a3efa8866f833e"
+  end
+
   uses_from_macos "git"
 
   on_macos do
