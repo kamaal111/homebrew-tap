@@ -206,3 +206,43 @@ for bottle preparation, and network access. It does not need GitHub credentials
 or publish commits, releases, branches, or PRs. The PR workflow runs these checks.
 
 Keep Tart and guest setup separate from package validation.
+
+## Namu bottles
+
+Namu's upstream archives already contain compiled binaries, but Homebrew still
+runs source-build CLT checks for a formula without a compatible bottle. Native
+macOS bottles avoid that path. Namu and agent-vm share bottle preparation,
+checksum verification, immutable publication, and receipt validation through
+`scripts/homebrew_bottle.py`.
+
+Validate without publishing or changing the formula:
+
+```sh
+uv run --locked pytest
+uv run --locked python scripts/namu-bottle.py
+```
+
+This needs a Mac with compatible build tools for bottle preparation. It clones
+Homebrew into a disposable cache prefix, builds from the verified release
+archive, requires a relocatable bottle, reinstalls it with an ordinary
+`brew install`, and checks `poured_from_bottle` in the installation receipt.
+It runs the worktree lifecycle test, checks version/help, and uninstalls.
+It does not modify the system CLT installation or disable Homebrew checks.
+
+To prepare a formula update from a worktree branch, use a fresh output directory:
+
+```sh
+uv run --locked python scripts/namu-bottle.py --output-dir /tmp/namu-bottle
+```
+
+Review `bottle.json` and `namu.rb` there. Publication uses a checksum-named release
+in this tap with `--latest=false`, preserving existing assets and the application
+version. To build, verify, publish, and write the formula in one step, add
+`--publish --target-sha` with the full existing tap base commit SHA and `--write`.
+These options require `--output-dir`; a mismatching existing asset is never replaced.
+Open a PR for the resulting formula and review its bottle tag, URL, and digest.
+
+The checked-in bottle targets Apple Silicon macOS 27. Other supported platforms
+retain their existing release-archive installation path. Building an output for
+a different platform refuses to overwrite an existing platform's bottle; the
+validation-only mode can test a local native bottle on any supported Mac.

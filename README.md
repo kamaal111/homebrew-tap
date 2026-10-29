@@ -115,7 +115,9 @@ for setup hooks, ignored-file copying, and safe deletion.
 
 The formula selects a prebuilt executable for your OS and architecture; Go is
 not required to install or run it. It uses macOS's system Git; on Linux, Homebrew
-installs Git as a dependency.
+installs Git as a dependency. Apple Silicon macOS 27 installs from a relocatable
+Homebrew bottle, avoiding source-build CLT checks. Other hosts use the release
+archive when no compatible bottle is available and may require compatible tools.
 
 ### Update Namu
 
@@ -129,8 +131,13 @@ python3 scripts/update_homebrew.py --version v0.1.0 --output /tmp/namu.rb
 
 Use the desired stable release tag, review the generated URLs and checksums,
 and copy its version, URL, and checksum changes into `Formula/namu.rb` while
-preserving the tap's platform dependencies and functional test. The generator verifies all four published
-archives against the release checksum manifest before writing the formula.
+preserving the tap's platform dependencies and functional test. The generator
+verifies all four published archives against the release checksum manifest
+before writing the formula. Remove the old bottle block when changing the
+application version, then build and publish a matching native bottle as described
+in [Contributing](CONTRIBUTING.md#namu-bottles).
 Open a worktree branch and PR for each update; do not commit updates on `main`.
-The Namu validation workflow checks formula style, installation, the worktree
-lifecycle test, and uninstallation on macOS and Linux.
+The Namu validation workflow checks shared bottle tooling, formula style,
+installation, the worktree lifecycle test, and uninstallation on macOS and Linux.
+It also builds a native bottle on macOS and verifies that a default installation
+pours it rather than falling back to the source-build path.
