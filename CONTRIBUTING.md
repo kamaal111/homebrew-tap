@@ -11,34 +11,42 @@ Python environment created by Homebrew when users install a formula.
 | `Formula/open_api_maker.rb` | Package source, checksum, resources, installation, and Homebrew test |
 | `pyproject.toml` | Maintainer dependency declarations and Python requirement |
 | `uv.lock` | Resolved maintainer dependency versions and artifact hashes |
-| `.python-version` | Python 3.15 selection for uv |
+| `mise.toml` | Pinned uv, just, and actionlint toolchain |
+| `.python-version` | Python version selected by uv |
 | `justfile` | Setup, formula generation, and local installation recipes |
 
 ## Set up
 
-Install [Homebrew](https://brew.sh/), Git, and zsh. Install the maintainer tools:
+Install [mise](https://mise.jdx.dev/getting-started.html), Homebrew, Git, and zsh.
+Clone the tap and install the pinned tools:
 
 ```sh
-brew install uv just
 git clone https://github.com/kamaal111/homebrew-tap.git
 cd homebrew-tap
-just init-venv
+mise trust
+mise install
+mise exec -- just init-venv
+mise exec -- just check
 ```
 
-The setup recipe runs `uv sync --locked`, creating or synchronizing `.venv` from
-the committed lockfile. uv selects Python 3.15 from `.python-version` and can
-[download it](https://docs.astral.sh/uv/guides/install-python/) when needed.
-PyYAML may need to build from source on Python 3.15; on macOS, install the Xcode
-Command Line Tools with `xcode-select --install` if compiler tools are missing.
+`mise.toml` pins uv 0.13.5, just 1.59.0, and actionlint 1.7.12. CI installs
+these tools from the same config using mise 2026.10.24. uv selects Python 3.15
+from `.python-version` and downloads a compatible interpreter when needed.
+Python is managed by uv, not mise.
 
-No shell activation or global pip installation is needed. Confirm the environment:
+`just check` runs workflow syntax/expression validation with actionlint, then the
+locked Python test suite. Recipes invoke tools through mise, so they also work
+without interactive shell activation when just is already on your `PATH`.
+Use `mise exec --` for direct uv commands, for example:
 
 ```sh
-uv run --locked python --version
-uv run --locked poet --help
+mise exec -- uv run --locked python --version
+mise exec -- uv run --locked poet --help
 ```
 
-The Python version should be 3.15.x. `.venv` is ignored; commit `uv.lock`.
+The environment is created by `uv sync --locked`; do not edit `uv.lock` by hand.
+Formula installation and native bottle validation still require Homebrew and
+compatible developer tools from the system. Mise does not install or alter CLT.
 
 ## Commands
 
@@ -47,6 +55,9 @@ Run recipes from the repository root:
 | Command | Effect |
 | --- | --- |
 | `just` or `just --list` | List available recipes |
+| `just check` | Run actionlint and the locked test suite |
+| `just lint` | Validate Actions syntax and expressions |
+| `just test` | Run the locked Python test suite |
 | `just init-venv` | Synchronize the uv environment using the existing lockfile |
 | `just formulate` | Regenerate `Formula/open_api_maker.rb` using the locked environment |
 | `just test-install` | Install the local formula from source with verbose output and Homebrew debugging enabled |
@@ -158,9 +169,8 @@ and [command reference](https://docs.brew.sh/Manpage) for packaging guidance.
 - **Lockfile mismatch:** after an intentional dependency edit, run `uv lock`,
   review the diff, and rerun `just init-venv`. Do not hand-edit hashes or bypass
   the locked checks to hide a mismatch.
-- **Missing commands:** install uv and just and ensure their executables are on
-  `PATH`. An existing environment created with another Python version can be
-  synchronized with `just init-venv`; uv will select the required interpreter.
+- **Missing commands:** run `mise install` and use `mise exec -- just check`.
+  Synchronize an existing virtual environment with `mise exec -- just init-venv`.
 - **Generation or download failure:** check access to PyPI and Python download
   hosts, then rerun the command. The existing formula is preserved when
   generation fails.
@@ -191,8 +201,8 @@ downgrades and protects manual branch changes.
 Run on Apple Silicon macOS:
 
 ```sh
-uv run --locked pytest
-uv run --locked python scripts/update-agent-vm.py --validate-only
+mise exec -- just check
+mise exec -- uv run --locked python scripts/update-package.py agent-vm --validate-only
 ```
 
 Validation clones Homebrew into a disposable prefix under `~/Library/Caches`,
@@ -218,8 +228,8 @@ checksum verification, immutable publication, and receipt validation through
 Validate without publishing or changing the formula:
 
 ```sh
-uv run --locked pytest
-uv run --locked python scripts/namu-bottle.py
+mise exec -- just check
+mise exec -- uv run --locked python scripts/namu-bottle.py
 ```
 
 This needs a Mac with compatible build tools for bottle preparation. It clones
@@ -229,20 +239,47 @@ archive, requires a relocatable bottle, reinstalls it with an ordinary
 It runs the worktree lifecycle test, checks version/help, and uninstalls.
 It does not modify the system CLT installation or disable Homebrew checks.
 
-To prepare a formula update from a worktree branch, use a fresh output directory:
+For application version updates, use the **Update Namu** workflow described in
+[the README](README.md#update-namu). Its updater uses the shared bottle tooling
+and `packaging/homebrew/namu.rb.in`; keep template and formula maintenance in sync.
+It verifies all four platform archives, prepares a native bottle, and proposes a
+formula-only PR without altering platform dependencies or the functional test.
+
+Run the updater tests and a publication-free rehearsal:
 
 ```sh
-uv run --locked python scripts/namu-bottle.py --output-dir /tmp/namu-bottle
+mise exec -- just check
+mise exec -- uv run --locked python scripts/update-package.py namu --version v0.2.0 \
+  --dry-run --output-dir /tmp/namu-update-rehearsal
 ```
 
-Review `bottle.json` and `namu.rb` there. Publication uses a checksum-named release
-in this tap with `--latest=false`, preserving existing assets and the application
-version. To build, verify, publish, and write the formula in one step, add
-`--publish --target-sha` with the full existing tap base commit SHA and `--write`.
-These options require `--output-dir`; a mismatching existing asset is never replaced.
-Open a PR for the resulting formula and review its bottle tag, URL, and digest.
+Use an empty output directory. Review `namu.rb` and `report.json`. The report records
+the release, tap base, verified archive digests, native bottle metadata, and completed
+validation stages. Dry runs never publish releases, push branches, open PRs, or
+trigger workflows. The CI rehearsal retains the formula and report as artifacts.
 
-The checked-in bottle targets Apple Silicon macOS 27. Other supported platforms
-retain their existing release-archive installation path. Building an output for
-a different platform refuses to overwrite an existing platform's bottle; the
-validation-only mode can test a local native bottle on any supported Mac.
+The existing `namu-bottle.py` tool remains available for deliberate bottle-only
+maintenance of the checked-in version. Its `--output-dir`, `--publish`,
+`--target-sha`, and `--write` options preserve their existing behavior. Version
+updates should go through `update-package.py namu` so release verification, branch ownership,
+lease protection, and PR validation are applied together.
+
+The checked-in bottle targets Apple Silicon macOS 27. The updater publishes a
+native bottle for its validation host; other supported platforms retain the
+release-archive installation path. When the application version is unchanged,
+existing platform bottles are preserved rather than replaced by another platform.
+
+## Shared release updater
+
+Both update workflows call `update_package(package, version)` in
+`scripts/tap_updater.py`. Package definitions contain only the name, release targets,
+and expected help text. The release repository, formula path, update branch, marker,
+and validation workflow are derived from the name. Formula templates and optional
+managed README sections live under `packaging/homebrew/`.
+
+The CLI is `mise exec -- uv run --locked python scripts/update-package.py namu` or
+`mise exec -- uv run --locked python scripts/update-package.py agent-vm`. Both support
+`--version`, `--dry-run --output-dir`, and `--validate-only`. The old
+`update-namu.py` and `update-agent-vm.py` filenames remain compatibility wrappers.
+Release verification, rendering, bottle validation, reporting, publication, and
+PR recovery all use one implementation and one suite parameterized for both tools.
