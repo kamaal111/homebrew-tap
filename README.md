@@ -47,7 +47,7 @@ Uninstall any formulae from this tap before removing the tap itself.
 
 ## Contribute and get help
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for the Python 3.15 uv setup, formula
+See [CONTRIBUTING.md](CONTRIBUTING.md) for the pinned mise toolchain, formula
 generation, validation, and current packaging limitations.
 
 Report packaging problems in the [issue tracker](https://github.com/kamaal111/homebrew-tap/issues).
@@ -62,13 +62,13 @@ After an agent-vm release has published its archive and checksums, run:
 gh workflow run update-agent-vm.yml --repo kamaal111/homebrew-tap -f version=v0.1.0
 ```
 
-Or run locally from this checkout on an Apple Silicon Mac. You'll need Python
-3.11+, Git configured for commits, Homebrew, and GitHub CLI signed in with write
-access to this tap:
+Or run locally on an Apple Silicon Mac after the
+[contributor tool setup](CONTRIBUTING.md#set-up). Configure Git for commits and
+sign GitHub CLI in with write access to this tap:
 
 ```sh
 gh auth setup-git
-python3 scripts/update-agent-vm.py --version v0.1.0
+mise exec -- uv run --locked python scripts/update-package.py agent-vm --version v0.1.0
 ```
 
 Omit the version to use the latest stable release. The updater tests the formula
@@ -81,7 +81,7 @@ Allow GitHub Actions to create and approve pull requests**.
 Run updater tests with:
 
 ```sh
-uv run --locked pytest
+mise exec -- just check
 ```
 
 <!-- agent-vm:start -->
@@ -121,23 +121,44 @@ archive when no compatible bottle is available and may require compatible tools.
 
 ### Update Namu
 
-Generate a formula using Namu's upstream release tooling rather than maintaining
-another copy of its checksum and platform-selection logic in this tap. From the
-root of a Namu checkout, run:
+After Namu publishes a stable release and all four archives, open
+**Actions → Update Namu → Run workflow** in this tap. Enter a stable tag such as
+`v0.2.0`, or leave the version empty for the latest stable release:
 
 ```sh
-python3 scripts/update_homebrew.py --version v0.1.0 --output /tmp/namu.rb
+gh workflow run update-namu.yml --repo kamaal111/homebrew-tap -f version=v0.2.0
 ```
 
-Use the desired stable release tag, review the generated URLs and checksums,
-and copy its version, URL, and checksum changes into `Formula/namu.rb` while
-preserving the tap's platform dependencies and functional test. The generator
-verifies all four published archives against the release checksum manifest
-before writing the formula. Remove the old bottle block when changing the
-application version, then build and publish a matching native bottle as described
-in [Contributing](CONTRIBUTING.md#namu-bottles).
-Open a worktree branch and PR for each update; do not commit updates on `main`.
-The Namu validation workflow checks shared bottle tooling, formula style,
-installation, the worktree lifecycle test, and uninstallation on macOS and Linux.
-It also builds a native bottle on macOS and verifies that a default installation
-pours it rather than falling back to the source-build path.
+The workflow verifies all archive checksums, builds and tests a native macOS
+bottle in an isolated Homebrew prefix, publishes an immutable bottle asset, and
+opens or refreshes one `update-namu` PR. It explicitly starts Namu validation
+for that branch. Review the formula and passing checks, then merge the PR.
+The tap update does not create a new upstream Namu release or merge itself.
+Other supported platforms continue using their verified release archives.
+
+Enable **Settings → Actions → General → Workflow permissions → Allow GitHub
+Actions to create and approve pull requests**. The workflow declares the
+contents, pull-request, and Actions permissions it needs; no extra token is
+required. Updating the formula template and shared updater tooling is covered
+by the existing agent-vm tests and the Namu updater tests.
+
+To rehearse a particular release without publishing or changing this checkout:
+
+```sh
+mise exec -- uv run --locked python scripts/update-package.py namu --version v0.2.0 \
+  --dry-run --output-dir /tmp/namu-update-rehearsal
+```
+
+Use an empty output directory. The real downloads, bottle installation, functional
+test, and uninstall run in isolation. The output includes `namu.rb`, `report.json`,
+and bottle artifacts. PR CI rehearses the latest stable releases of both packages, tests the suite
+against each generated formula, and uploads the candidate formula and
+report as `namu-update-rehearsal`. Keep these artifacts out of Git.
+
+Rerun the workflow after transient failures. It verifies and reuses an existing
+bottle asset rather than replacing it, and refreshes its existing PR. An already
+merged release is a no-op. Downgrades, checksum mismatches, manual edits to the
+update branch, or a changing tap base/head stop publication; inspect the failure
+before retrying. Do not delete or force-update someone else's branch to bypass
+these checks. If validation dispatch fails after a PR is opened, rerun the update
+workflow, or dispatch `validate-namu.yml` against `update-namu` manually.

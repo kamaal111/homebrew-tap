@@ -1,0 +1,4 @@
+[tools]
+uv = "0.13.5"
+just = "1.59.0"
+actionlint = "1.7.12"

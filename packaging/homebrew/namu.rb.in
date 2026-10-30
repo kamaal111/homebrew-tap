@@ -1,0 +1,54 @@
+class Namu < Formula
+  desc "Create, open, list and delete Git worktrees"
+  homepage "https://github.com/kamaal111/namu"
+  version "@VERSION@"
+
+  uses_from_macos "git"
+
+  on_macos do
+    on_arm do
+      url "https://github.com/kamaal111/namu/releases/download/v@VERSION@/namu_@VERSION@_darwin_arm64.tar.gz"
+      sha256 "@SHA_DARWIN_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/kamaal111/namu/releases/download/v@VERSION@/namu_@VERSION@_darwin_amd64.tar.gz"
+      sha256 "@SHA_DARWIN_AMD64@"
+    end
+  end
+
+  on_linux do
+    on_arm do
+      url "https://github.com/kamaal111/namu/releases/download/v@VERSION@/namu_@VERSION@_linux_arm64.tar.gz"
+      sha256 "@SHA_LINUX_ARM64@"
+    end
+    on_intel do
+      url "https://github.com/kamaal111/namu/releases/download/v@VERSION@/namu_@VERSION@_linux_amd64.tar.gz"
+      sha256 "@SHA_LINUX_AMD64@"
+    end
+  end
+
+  def install
+    bin.install "namu"
+  end
+
+  test do
+    assert_equal "namu version #{version}", shell_output("#{bin}/namu --version").strip
+    assert_match "Git worktrees", shell_output("#{bin}/namu --help")
+
+    ENV["GIT_CONFIG_GLOBAL"] = File::NULL
+    ENV["GIT_CONFIG_NOSYSTEM"] = "1"
+    system "git", "init", "--initial-branch=main"
+    system "git", "-c", "user.name=Homebrew Test", "-c", "user.email=test@example.com",
+           "commit", "--allow-empty", "-m", "Initial commit"
+
+    checkout = testpath.realpath/".agents/worktrees/feature/homebrew"
+    assert_equal checkout.to_s, shell_output("#{bin}/namu create feature/homebrew --base main").strip
+    assert_path_exists checkout/".git"
+    assert_equal checkout.to_s, shell_output("#{bin}/namu open feature/homebrew").strip
+    assert_match "feature/homebrew", shell_output("#{bin}/namu list")
+
+    system bin/"namu", "delete", "feature/homebrew"
+    refute_path_exists checkout
+    assert_match "feature/homebrew", shell_output("git branch --list feature/homebrew")
+  end
+end

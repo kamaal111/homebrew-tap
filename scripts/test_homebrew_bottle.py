@@ -7,7 +7,7 @@ import pytest
 import homebrew_bottle as bottles
 
 
-FORMULA = (Path(__file__).resolve().parent.parent / "Formula/namu.rb").read_text()
+FORMULA = (Path(__file__).resolve().parent / "fixtures/namu-v0.1.0.rb").read_text()
 DIGEST = "a" * 64
 BOTTLE = {"tag": "arm64_golden_gate", "sha256": DIGEST}
 
