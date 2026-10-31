@@ -38,3 +38,15 @@ test:
 
 # Run the same checks used by CI
 check: lint test
+
+# Run matching locked Python tests
+test-run pattern package="scripts":
+    mise exec -- uv run --locked pytest {{ quote(package) }} -k {{ quote(pattern) }}
+
+# Validate the checked-in Namu formula in an isolated Homebrew prefix
+validate-namu:
+    mise exec -- uv run --locked python scripts/namu-bottle.py
+
+# Rehearse a Namu release update without publishing
+rehearse-namu version output:
+    mise exec -- uv run --locked python scripts/update-package.py namu --version {{ quote(version) }} --dry-run --output-dir {{ quote(output) }}

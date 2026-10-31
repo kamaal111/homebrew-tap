@@ -42,9 +42,11 @@ class Namu < Formula
            "commit", "--allow-empty", "-m", "Initial commit"
 
     checkout = testpath.realpath/".agents/worktrees/feature/homebrew"
-    assert_equal checkout.to_s, shell_output("#{bin}/namu create feature/homebrew --base main").strip
+    created = shell_output("#{bin}/namu create feature/homebrew --base main").strip
+    assert_equal checkout, Pathname.new(created).expand_path.realpath
     assert_path_exists checkout/".git"
-    assert_equal checkout.to_s, shell_output("#{bin}/namu open feature/homebrew").strip
+    opened = shell_output("#{bin}/namu open feature/homebrew").strip
+    assert_equal checkout, Pathname.new(opened).expand_path.realpath
     assert_match "feature/homebrew", shell_output("#{bin}/namu list")
 
     system bin/"namu", "delete", "feature/homebrew"

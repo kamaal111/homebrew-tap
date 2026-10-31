@@ -58,6 +58,9 @@ Run recipes from the repository root:
 | `just check` | Run actionlint and the locked test suite |
 | `just lint` | Validate Actions syntax and expressions |
 | `just test` | Run the locked Python test suite |
+| `just test-run PATTERN PACKAGE` | Run matching locked Python tests in a file or directory (default: `scripts`) |
+| `just validate-namu` | Validate the checked-in Namu formula and native bottle in isolation |
+| `just rehearse-namu VERSION OUTPUT` | Rehearse a release update without publishing; use an empty output directory |
 | `just init-venv` | Synchronize the uv environment using the existing lockfile |
 | `just formulate` | Regenerate `Formula/open_api_maker.rb` using the locked environment |
 | `just test-install` | Install the local formula from source with verbose output and Homebrew debugging enabled |
