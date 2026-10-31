@@ -71,6 +71,9 @@ implicit lockfile change. See [uv locking and syncing](https://docs.astral.sh/uv
 
 ## Update a formula
 
+`open_api_maker` is deprecated as of 2026-10-31 because it is no longer
+maintained in this tap. If regenerating it, preserve its deprecation metadata.
+
 1. Change the exact application pin deliberately. For example, to reproduce the
    current application dependency:
 
@@ -99,6 +102,13 @@ implicit lockfile change. See [uv locking and syncing](https://docs.astral.sh/uv
    description, homepage, source version and URL, SHA-256, Python dependency,
    resource versions and checksums, installation logic, and test block. Restore
    any intentional hand-maintained content that generation replaces.
+
+   In particular, restore this declaration after the source checksum and before
+   dependencies:
+
+   ```ruby
+   deprecate! date: "2026-10-31", because: "is no longer maintained in this tap"
+   ```
 
 The recipe writes temporary files beside the destination and replaces it only
 after generation and transformation succeed. A failed generator leaves the

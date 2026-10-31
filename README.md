@@ -7,12 +7,16 @@ A [Homebrew](https://brew.sh/) tap for installing packages maintained by
 
 | Formula | Python package | Packaged version |
 | --- | --- | --- |
-| `open_api_maker` | [open-api-maker-kamaalio](https://pypi.org/project/open-api-maker-kamaalio/) | 0.0.2 |
+| `open_api_maker` (deprecated) | [open-api-maker-kamaalio](https://pypi.org/project/open-api-maker-kamaalio/) | 0.0.2 |
 
 This repository contains the Homebrew packaging. See the upstream package for
 application usage information.
 
 ## Install
+
+`open_api_maker` is deprecated as of 2026-10-31 because it is no longer
+maintained in this tap. Installation remains available but is discouraged.
+The commands below are retained for existing users.
 
 Install [Homebrew](https://brew.sh/) first, then run:
 
