@@ -1,34 +1,34 @@
 class Namu < Formula
   desc "Create, open, list and delete Git worktrees"
   homepage "https://github.com/kamaal111/namu"
-  version "0.7.0"
+  version "0.8.0"
 
   bottle do
-    root_url "https://github.com/kamaal111/homebrew-tap/releases/download/namu-v0.7.0-bottle-a560e59336025bc343acc4e004d054f643989e4695b1b4bcf8f6954ef37a826e"
-    sha256 cellar: :any_skip_relocation, arm64_sequoia: "a560e59336025bc343acc4e004d054f643989e4695b1b4bcf8f6954ef37a826e"
+    root_url "https://github.com/kamaal111/homebrew-tap/releases/download/namu-v0.8.0-bottle-62ae068d085759a029b188e6abf9d2bc59ccdf43e2f6249c0a9c07524a1073c9"
+    sha256 cellar: :any_skip_relocation, arm64_sequoia: "62ae068d085759a029b188e6abf9d2bc59ccdf43e2f6249c0a9c07524a1073c9"
   end
 
   uses_from_macos "git"
 
   on_macos do
     on_arm do
-      url "https://github.com/kamaal111/namu/releases/download/v0.7.0/namu_0.7.0_darwin_arm64.tar.gz"
-      sha256 "632fe6a8efe11be7c7dbf83812eae6162153bfff65766780f59b0edb5cbb487a"
+      url "https://github.com/kamaal111/namu/releases/download/v0.8.0/namu_0.8.0_darwin_arm64.tar.gz"
+      sha256 "206c3bb01c7bb57ceeb99f28b840a05890298ff7e283e0b9eea6555575a63388"
     end
     on_intel do
-      url "https://github.com/kamaal111/namu/releases/download/v0.7.0/namu_0.7.0_darwin_amd64.tar.gz"
-      sha256 "74348f53c57b2a4d50430d10ef0994f1cf3e5bbc736b77fb63af119ad7dc86a9"
+      url "https://github.com/kamaal111/namu/releases/download/v0.8.0/namu_0.8.0_darwin_amd64.tar.gz"
+      sha256 "e9ffe0ec4e6af495f6cfb21346783989e6351d7d13d1e63605f13f9e01df25f3"
     end
   end
 
   on_linux do
     on_arm do
-      url "https://github.com/kamaal111/namu/releases/download/v0.7.0/namu_0.7.0_linux_arm64.tar.gz"
-      sha256 "73d9b863f7b67f7ba4d5f60c0796c7a9edc43fabf63114e7f16918c3e77f5d21"
+      url "https://github.com/kamaal111/namu/releases/download/v0.8.0/namu_0.8.0_linux_arm64.tar.gz"
+      sha256 "32f33baf95799daca6622110dfd0780824e34c1ac02c352372c87cf6e5b82093"
     end
     on_intel do
-      url "https://github.com/kamaal111/namu/releases/download/v0.7.0/namu_0.7.0_linux_amd64.tar.gz"
-      sha256 "a6a9f91c5ff6221cea60c5a176d9b46ffbf20dce715a22c54498dbbc762d4ba6"
+      url "https://github.com/kamaal111/namu/releases/download/v0.8.0/namu_0.8.0_linux_amd64.tar.gz"
+      sha256 "f637739b92c6ecdddc8fc1e52b8a193ac98a9ab86535dab37d53c87a0aa3f780"
     end
   end
 
